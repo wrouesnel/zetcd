@@ -15,7 +15,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"path"
@@ -23,51 +22,167 @@ import (
 	"time"
 
 	"github.com/samuel/go-zookeeper/zk"
+	"gopkg.in/alecthomas/kingpin.v2"
+	"strings"
 )
 
 var (
 	acl = zk.WorldACL(zk.PermAll)
 )
 
+type watchCmd struct {
+	key string
+}
+
+func (c *watchCmd) run(pctx *kingpin.ParseContext) {
+
+}
+
+type lsCmd struct {
+	key string
+}
+
+func (c *lsCmd) run(pctx *kingpin.ParseContext) {
+
+}
+
+type rmCmd struct {
+	key string
+}
+
+func (c *rmCmd) run(pctx *kingpin.ParseContext) {
+
+}
+
+type setCmd struct {
+	key   string
+	value string
+}
+
+func (c *setCmd) run(pctx *kingpin.ParseContext) {
+
+}
+
+type getCmd struct {
+	key string
+}
+
+func (c *getCmd) run(pctx *kingpin.ParseContext) {
+
+}
+
+type putCmd struct {
+	key   string
+	value string
+	flag  int32
+}
+
+func (c *putCmd) run(pctx *kingpin.ParseContext) {
+
+}
+
 func main() {
-	s := flag.String("zkaddr", "127.0.0.1", "address of zookeeper server")
-	flag.Parse()
-	c, _, err := zk.Connect([]string{*s}, time.Second)
-	if err != nil {
-		panic(err)
+	// User input
+	server := new(string)
+	key := new(string)
+	value := new(string)
+	keyFlags := new(int32)
+
+	// Calculated state
+	zkConn := new(*zk.Conn)
+	zkConnectTimeout := new(time.Duration)
+
+	app := kingpin.New("zkctl", "Zookeeper CLI tool")
+	app.Flag("timeout", "timeout for connecting to the server (comma-separate for cluster)").Default("1s").DurationVar(zkConnectTimeout)
+	app.Flag("zkaddr", "address of zookeeper server").Default("127.0.0.1:2181").StringVar(server)
+	app.Action(func (pctx *kingpin.ParseContext) error {
+		var err error
+		serverList := strings.Split(*server, ",")
+		*zkConn, _, err = zk.Connect(serverList, *zkConnectTimeout)
+		return err
+	})
+
+	{
+		cmd := app.Command("watch", "watch for changes on a key")
+		cmd.Arg("key", "key to start watching").Default("/").StringVar(key)
+		cmd.Action(func (pctx *kingpin.ParseContext) error {
+			watch(*zkConn, *key)
+			return nil
+		})
 	}
 
-	switch flag.Args()[0] {
-	case "watch":
-		dir := "/"
-		if len(flag.Args()) > 1 {
-			dir = flag.Args()[1]
-		}
-		watch(c, dir)
-	case "ls":
-		dir := "/"
-		if len(flag.Args()) > 1 {
-			dir = flag.Args()[1]
-		}
-		err = ls(c, dir)
-	case "rm":
-		err = rm(c, flag.Args()[1])
-	case "set":
-		err = set(c, flag.Args()[1], flag.Args()[2])
-	case "get":
-		err = get(c, flag.Args()[1])
-	case "put":
-		err = put(c, flag.Args()[1], flag.Args()[2], 0)
-	case "eput":
-		err = put(c, flag.Args()[1], flag.Args()[2], zk.FlagEphemeral)
-	case "sput":
-		err = put(c, flag.Args()[1], flag.Args()[2], zk.FlagSequence)
+	{
+		cmd := app.Command("ls", "list child keys")
+		cmd.Arg("key", "key to start watching").Default("/").StringVar(key)
+		cmd.Action(func (pctx *kingpin.ParseContext) error {
+			return ls(*zkConn, *key)
+		})
 	}
 
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+	{
+		cmd := app.Command("rm", "delete key")
+		cmd.Arg("key", "key to start watching").StringVar(key)
+		cmd.Action(func (pctx *kingpin.ParseContext) error {
+			return rm(*zkConn, *key)
+		})
 	}
+
+	{
+		cmd := app.Command("get", "get key value")
+		cmd.Arg("key", "key to start watching").StringVar(key)
+		cmd.Action(func (pctx *kingpin.ParseContext) error {
+			return get(*zkConn, *key)
+		})
+	}
+
+	{
+		cmd := app.Command("set", "set key value")
+		cmd.Arg("key", "key to start watching").StringVar(key)
+		cmd.Arg("value", "value to set").StringVar(value)
+		cmd.Action(func (pctx *kingpin.ParseContext) error {
+			return set(*zkConn, *key, *value)
+		})
+	}
+
+	{
+		cmd := app.Command("put", "put a new key")
+		cmd.Arg("key", "key to start watching").StringVar(key)
+		cmd.Arg("value", "value to set").StringVar(value)
+		cmd.Action(func (pctx *kingpin.ParseContext) error {
+			return put(*zkConn, *key, *value, *keyFlags)
+		})
+	}
+
+	{
+		cmd := app.Command("eput", "put an ephemeral key")
+		cmd.Arg("key", "key to start watching").StringVar(key)
+		cmd.Arg("value", "value to set").StringVar(value)
+		cmd.PreAction(func (pctx *kingpin.ParseContext) error {
+			*keyFlags = zk.FlagEphemeral
+			return nil
+		})
+
+		cmd.Action(func (pctx *kingpin.ParseContext) error {
+			return put(*zkConn, *key, *value, *keyFlags)
+		})
+	}
+
+	{
+		cmd := app.Command("sput", "put a sequenced key")
+		cmd.Arg("key", "key to start watching").StringVar(key)
+		cmd.Arg("value", "value to set").StringVar(value)
+
+		cmd.PreAction(func (pctx *kingpin.ParseContext) error {
+			*keyFlags = zk.FlagSequence
+			return nil
+		})
+
+		cmd.Action(func (pctx *kingpin.ParseContext) error {
+			return put(*zkConn, *key, *value, *keyFlags)
+		})
+	}
+
+	kingpin.MustParse(app.Parse(os.Args[1:]))
 }
 
 func watch(c *zk.Conn, dir string) {
