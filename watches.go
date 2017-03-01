@@ -104,6 +104,8 @@ func (ws *watches) Watch(rev ZXid, xid Xid, path string, evtype EventType, cb fu
 		return
 	}
 
+	glog.V(10).Infof("Watch(%v, %v, %v, %v); etcd prefix: %v", rev, xid, path, evtype, getWatchPfx(path))
+
 	ctx, cancel := context.WithCancel(ws.ctx)
 	var wch etcd.WatchChan
 	switch evtype {
@@ -117,7 +119,7 @@ func (ws *watches) Watch(rev ZXid, xid Xid, path string, evtype EventType, cb fu
 	case EventNodeChildrenChanged:
 		wch = ws.c.Watch(
 			ctx,
-			getListPfx(path),
+			getWatchPfx(path),
 			etcd.WithPrefix(),
 			etcd.WithRev(int64(rev+1)))
 	default:
@@ -146,8 +148,10 @@ func (ws *watches) runWatch(w *watch, cb func(ZXid)) {
 		select {
 		case resp, ok := <-w.wch:
 			if !ok {
+				glog.V(10).Infof("runWatch(); not ok - closing: %v %v", w.xid, w.path)
 				return
 			}
+			glog.V(10).Infof("runWatch(); got resp == %v %v %v", w.xid, w.path, resp)
 			for _, ev := range resp.Events {
 				if !w.isRelevant(ev) {
 					continue

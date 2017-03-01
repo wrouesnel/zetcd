@@ -39,6 +39,7 @@ var PerfectZXidMode bool = true
 func NewZKEtcd(c *etcd.Client, s Session) ZK { return &zkEtcd{c, s} }
 
 func (z *zkEtcd) Create(xid Xid, op *CreateRequest) ZKResponse {
+	glog.V(10).Infof("Enter Create(%v, %v);", xid, op)
 	opts := []etcd.OpOption{}
 	if (op.Flags & FlagEphemeral) != 0 {
 		opts = append(opts, etcd.WithLease(etcd.LeaseID(z.s.Sid())))
@@ -49,7 +50,9 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) ZKResponse {
 	}
 
 	var p, respPath string // path of new node, passed back from txn
+
 	pp := mkPath(path.Dir(op.Path))
+
 	pkey := "/zk/cver/" + pp
 	applyf := func(s v3sync.STM) (err error) {
 		defer func() {
@@ -61,7 +64,7 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) ZKResponse {
 		if len(op.Acl) == 0 {
 			return ErrInvalidACL
 		}
-		if len(pp) != 2 && s.Rev("/zk/ctime/"+pp) == 0 {
+		if len(pp) != 3 && s.Rev("/zk/ctime/"+pp) == 0 {
 			// no parent
 			return ErrNoNode
 		}
@@ -78,6 +81,8 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) ZKResponse {
 		} else if s.Rev("/zk/ctime/"+p) != 0 {
 			return ErrNodeExists
 		}
+
+		glog.V(10).Infof("Create(%v, ...); p=%v pp=%v respPath=%v", xid, p, pp, respPath)
 
 		t := encodeTime()
 
@@ -128,6 +133,7 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) ZKResponse {
 }
 
 func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) ZKResponse {
+	glog.V(10).Infof("Enter GetChildren2(%v, %v);", xid, op)
 	resp := &GetChildren2Response{}
 	p := mkPath(op.Path)
 
@@ -137,13 +143,14 @@ func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) ZKResponse {
 	}
 
 	resp.Stat = statTxn(txnresp)
-	if len(p) != 2 && resp.Stat.Ctime == 0 {
+	if len(p) != 3 && resp.Stat.Ctime == 0 {
 		return mkZKErr(xid, ZXid(txnresp.Header.Revision), errNoNode)
 	}
 
 	children := txnresp.Responses[5].GetResponseRange()
 	for _, kv := range children.Kvs {
 		zkkey := strings.Replace(string(kv.Key), getListPfx(p), "", 1)
+		glog.V(10).Infof("GetChildren2; kv: %v zkkey: %v", kv, zkkey)
 		resp.Children = append(resp.Children, zkkey)
 	}
 
@@ -172,12 +179,13 @@ func (z *zkEtcd) Ping(xid Xid, op *PingRequest) ZKResponse {
 }
 
 func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) ZKResponse {
+	glog.V(10).Infof("Enter Delete(%v, %v);", xid, op)
 	p := mkPath(op.Path)
 	pp := mkPath(path.Dir(op.Path))
 	key := "/zk/key/" + p
 
 	applyf := func(s v3sync.STM) error {
-		if len(pp) != 2 && s.Rev("/zk/ctime/"+pp) == 0 {
+		if len(pp) != 3 && s.Rev("/zk/ctime/"+pp) == 0 {
 			// no parent
 			if PerfectZXidMode {
 				s.Put("/zk/err-node", "1")
@@ -237,6 +245,7 @@ func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) ZKResponse {
 }
 
 func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) ZKResponse {
+	glog.V(10).Infof("Enter Exists(%v, %v);", xid, op)
 	p := mkPath(op.Path)
 	gets := statGets(p)
 	txnresp, err := z.c.Txn(z.c.Ctx()).Then(gets...).Commit()
@@ -275,6 +284,7 @@ func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) ZKResponse {
 }
 
 func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) ZKResponse {
+	glog.V(10).Infof("Enter GetData(%v, %v);", xid, op)
 	p := mkPath(op.Path)
 	gets := statGets(p)
 	txnresp, err := z.c.Txn(z.c.Ctx()).Then(gets...).Commit()
@@ -311,6 +321,7 @@ func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) ZKResponse {
 }
 
 func (z *zkEtcd) SetData(xid Xid, op *SetDataRequest) ZKResponse {
+	glog.V(10).Infof("Enter SetData(%v, %v);", xid, op)
 	p := mkPath(op.Path)
 	var statResp etcd.TxnResponse
 	applyf := func(s v3sync.STM) error {
@@ -361,6 +372,7 @@ func (z *zkEtcd) SetData(xid Xid, op *SetDataRequest) ZKResponse {
 }
 
 func (z *zkEtcd) GetAcl(xid Xid, op *GetAclRequest) ZKResponse {
+	glog.V(10).Infof("Enter GetAcl(%v, %v);", xid, op)
 	resp := &GetAclResponse{}
 	p := mkPath(op.Path)
 
@@ -387,6 +399,7 @@ func (z *zkEtcd) GetAcl(xid Xid, op *GetAclRequest) ZKResponse {
 func (z *zkEtcd) SetAcl(xid Xid, op *SetAclRequest) ZKResponse { panic("setAcl") }
 
 func (z *zkEtcd) GetChildren(xid Xid, op *GetChildrenRequest) ZKResponse {
+	glog.V(10).Infof("Enter GetChildren(%v, %v);", xid, op)
 	p := mkPath(op.Path)
 	txnresp, err := z.c.Txn(z.c.Ctx()).Then(statGets(p)...).Commit()
 	if err != nil {
@@ -394,7 +407,7 @@ func (z *zkEtcd) GetChildren(xid Xid, op *GetChildrenRequest) ZKResponse {
 	}
 
 	s := statTxn(txnresp)
-	if len(p) != 2 && s.Ctime == 0 {
+	if len(p) != 3 && s.Ctime == 0 {
 		return mkZKErr(xid, ZXid(txnresp.Header.Revision), errNoNode)
 	}
 
@@ -416,6 +429,7 @@ func (z *zkEtcd) GetChildren(xid Xid, op *GetChildrenRequest) ZKResponse {
 			glog.V(7).Infof("WatchChild (%v,%v,%+v)", xid, newzxid, *wresp)
 			z.s.Send(-1, -1, wresp)
 		}
+		glog.V(7).Infof("GetChildren(%v): setup DataWatch: %v => %v", xid, op.Path, p)
 		z.s.Watch(zxid, xid, p, EventNodeChildrenChanged, f)
 	}
 
@@ -424,6 +438,7 @@ func (z *zkEtcd) GetChildren(xid Xid, op *GetChildrenRequest) ZKResponse {
 }
 
 func (z *zkEtcd) Sync(xid Xid, op *SyncRequest) ZKResponse {
+	glog.V(10).Infof("Enter Sync(%v, %v);", xid, op)
 	// linearized read
 	resp, err := z.c.Get(z.c.Ctx(), "/zk/ver/"+mkPath(op.Path))
 	if err != nil {
@@ -442,6 +457,7 @@ func (z *zkEtcd) Sync(xid Xid, op *SyncRequest) ZKResponse {
 func (z *zkEtcd) Multi(xid Xid, op *MultiRequest) ZKResponse { panic("multi") }
 
 func (z *zkEtcd) Close(xid Xid, op *CloseRequest) ZKResponse {
+	glog.V(10).Infof("Enter Close(%v);", xid)
 	resp, _ := z.c.Revoke(z.c.Ctx(), etcd.LeaseID(z.s.Sid()))
 	zxid := ZXid(0)
 	if resp != nil {
@@ -453,6 +469,7 @@ func (z *zkEtcd) Close(xid Xid, op *CloseRequest) ZKResponse {
 func (z *zkEtcd) SetAuth(xid Xid, op *SetAuthRequest) ZKResponse { panic("setAuth") }
 
 func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) ZKResponse {
+	glog.V(10).Infof("Enter SetWatches(%v, %v);", xid, op)
 	for _, dw := range op.DataWatches {
 		dataPath := dw
 		p := mkPath(dataPath)
@@ -465,6 +482,7 @@ func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) ZKResponse {
 			glog.V(7).Infof("WatchData* (%v,%v,%v)", xid, newzxid, *wresp)
 			z.s.Send(-1, -1, wresp)
 		}
+		glog.V(7).Infof("SetWatches(%v): setup DataWatch: %v => %v", xid, dataPath, p)
 		z.s.Watch(op.RelativeZxid, xid, p, EventNodeDataChanged, f)
 	}
 
@@ -499,6 +517,7 @@ func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) ZKResponse {
 			glog.V(7).Infof("WatchExist* (%v,%v,%v)", xid, newzxid, *wresp)
 			z.s.Send(-1, -1, wresp)
 		}
+		glog.V(7).Infof("SetWatches(%v): setup existing watch: %v => %v", xid, existPath, p)
 		z.s.Watch(op.RelativeZxid, xid, p, ev, f)
 	}
 	for _, cw := range op.ChildWatches {
@@ -513,6 +532,7 @@ func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) ZKResponse {
 			glog.V(7).Infof("WatchChild* (%v,%v,%v)", xid, newzxid, *wresp)
 			z.s.Send(-1, -1, wresp)
 		}
+		glog.V(7).Infof("SetWatches(%v): setup childpath watch: %v => %v", xid, childPath, p)
 		z.s.Watch(op.RelativeZxid, xid, p, EventNodeChildrenChanged, f)
 	}
 

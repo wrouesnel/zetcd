@@ -15,11 +15,20 @@
 package zetcd
 
 import (
-	"path"
+	//"path"
+	"fmt"
+	"strings"
+	"strconv"
+	"github.com/golang/glog"
+)
+
+const (
+	ListKeyPrefix string = "/zk/ver/"
 )
 
 func mkPath(zkPath string) string {
-	p := path.Clean(zkPath)
+	//p := path.Clean(zkPath)
+	p := zkPath
 	if p[0] != '/' {
 		p = "/" + p
 	}
@@ -29,7 +38,11 @@ func mkPath(zkPath string) string {
 			depth++
 		}
 	}
-	return string(append([]byte{byte(depth)}, []byte(p)...))
+
+	path := fmt.Sprintf("%2.2X%s",byte(depth), p)
+
+	glog.V(10).Infof("mkPath(%v) = %v", zkPath, path)
+	return path
 }
 
 func incPath(zetcdPath string) string {
@@ -38,12 +51,63 @@ func incPath(zetcdPath string) string {
 	return string(b)
 }
 
+//func getListPfx(p string) string {
+//	var listPfx string
+//
+//	if len(p) != 3 {
+//		// Decode the hex byte
+//		splitStrings := strings.Split(p, "/")
+//		depth, _ := strconv.ParseUint(splitStrings[0], 16, 8)
+//
+//		searchP := fmt.Sprintf("%2.2X%s",byte(depth), p[2:])
+//
+//		listPfx = ListKeyPrefix + searchP + "/"
+//	} else {
+//		listPfx = ListKeyPrefix + p
+//	}
+//
+//	glog.V(10).Infof("getListPfx(%v) = %v", p, listPfx)
+//	return listPfx
+//}
+
+// getListPfx : this returns the prefix key in etcd neede to list subkeys of a
+// a key. *As a result* - it decodes the num-children component of the path,
+// increments it by 1 (because the actual child keys are one level down) and
+// returns that.
 func getListPfx(p string) string {
-	pfx := "/zk/ver/"
-	if len(p) != 2 {
-		// /abc => 1 => listing dir needs search on p[0] = 2
-		searchP := string([]byte{p[0] + 1}) + p[1:]
-		return pfx + searchP + "/"
+	var listPfx string
+
+	if len(p) != 3 {
+		// Decode the hex byte
+		splitStrings := strings.Split(p, "/")
+		depth, _ := strconv.ParseUint(splitStrings[0], 16, 8)
+		// Increment the depth to return the right listing path for the children
+		searchP := fmt.Sprintf("%2.2X%s/",byte(depth + 1), p[2:])
+
+		listPfx = ListKeyPrefix + searchP
+	} else {
+		listPfx = ListKeyPrefix + p
 	}
-	return pfx + p
+
+	glog.V(10).Infof("getListPfx(%v) = %v", p, listPfx)
+	return listPfx
+}
+
+func getWatchPfx(p string) string {
+	var listPfx string
+
+	if len(p) != 3 {
+		// Decode the hex byte
+		splitStrings := strings.Split(p, "/")
+		depth, _ := strconv.ParseUint(splitStrings[0], 16, 8)
+		// Increment the depth to return the right listing path for the children
+		searchP := fmt.Sprintf("%2.2X%s/",byte(depth + 1), p[2:])
+
+		listPfx = ListKeyPrefix + searchP
+	} else {
+		listPfx = ListKeyPrefix + p
+	}
+
+	glog.V(10).Infof("getWatchPfx(%v) = %v", p, listPfx)
+	return listPfx
 }
